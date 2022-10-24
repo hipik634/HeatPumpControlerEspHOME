@@ -26,10 +26,10 @@ esp8266:
 
 # Enable Home Assistant API
 api:
-  password: "dohled"
+  password: "jkjkj"
   reboot_timeout: 900s
 ota:
-  password: "dohled"
+  password: "jkhkhjh"
 
 wifi:
   reboot_timeout: 900s
