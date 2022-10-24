@@ -1,9 +1,7 @@
-#heat pump controller by hipik634
+#heat pump controller by hipik
 #inspiration https://github.com/openhp/HeatPumpController/
 #no EEV module yet/no need on my side, got TXV
 #meant to be used standalone with HA as an option to visualize
-#got an old toshiba clima outdoor box, internals works just fine, but comms with internal unit is a headache, it keeps resetting 4wv thus not heating the plate exchanger on the 
-#place of indoor unit. Thus I created this one with 6 relays and some temperatures.
 
 #bugs: on restart it triggers all relays for a short time
 
@@ -98,16 +96,16 @@ dallas:
     update_interval: 10s
     id: temps
 
-number:
-  - platform: template
-    name: "temp update frequency slider"
-    id: "Slider"
-    step: 1
-    min_value: 1
-    max_value: 100
-    mode: slider
-    set_action:
-    - logger.log: Slider
+#number:
+#  - platform: template
+#    name: "temp update frequency slider"
+#    id: "Slider"
+#    step: 1
+#    min_value: 1
+#    max_value: 100
+#    mode: slider
+#    set_action:
+#    - logger.log: Slider
   #    then:
    #     - lambda:  id(temps) = x;
 
@@ -195,6 +193,18 @@ sensor:
 #in any situation, safety stops all AC action
 #wire compressor external unit relay via HT pressure cut off valve to avoid overpressure.
 
+button:
+ - platform: template
+   name: defrost
+   on_press:
+     then:
+       - logger.log: "defrost Pressed"
+       - switch.turn_off: four_wv
+       - switch.turn_on: compressor
+       - delay: 10 s
+       - switch.turn_on: safety
+       - delay: 1 s
+       - switch.turn_off: safety
 
 
 
