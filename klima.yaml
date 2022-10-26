@@ -114,17 +114,17 @@ dallas:
 sensor:
   - platform: dallas
     address: 0x9bea5db81e64ff28
-    name: "Outdoor after evaporator Tae"
+    name: "HP Outdoor after evaporator - Tae"
     id: tae
 #add temperature ranges
   - platform: dallas
     address: 0xd16840831e64ff28
-    name: "Outdoor Unit before evaporator TBe"
+    name: "HP Outdoor Unit before evaporator - Tbe"
     id: tbe
 #add temperature ranges
   - platform: dallas
     address: 0x8ead46831e64ff28
-    name: "Indoor Unit hot out tho"
+    name: "HP Indoor Unit hot out - Tho"
     id: tho
     on_value_range:
         - above: 65.0
@@ -135,8 +135,8 @@ sensor:
         #  then:
          #   - switch.turn_off: safety_stop
   - platform: dallas
-    address: 0x536db7931e64ff28
-    name: "Indoor Unit hot in thi"
+    address: 0x5287879f1e64ff28
+    name: "HP Indoor Unit Hot In - Thi"
     id: thi
     on_value_range:
         - above: 65.0
@@ -148,7 +148,7 @@ sensor:
          #   - switch.turn_off: safety_stop
   - platform: dallas
     address: 0xba5cbe9f1e64ff28
-    name: "Indoor before condenser tbc"
+    name: "HP Indoor before condenser - Tbc"
     id: tbc
     on_value_range:
         - above: 65.0
@@ -159,8 +159,8 @@ sensor:
         #  then:
          #   - switch.turn_off: safety_stop
   - platform: dallas
-    address: 0xda99c59f1e64ff28
-    name: "Indoor after condenser tac"
+    address: 0x536db7931e64ff28
+    name: "HP Indoor after condenser - Tac"
     id: tac
     on_value_range:
         - above: 65.0
@@ -170,17 +170,18 @@ sensor:
        # - below: 50.0
         #  then:
          #   - switch.turn_off: safety_stop
+
   - platform: dallas
     address: 0xda99c59f1e64ff28
-    name: "Outdoor compressor crankcase tcrc"
+    name: "HP Outdoor Compressor temp - Tcc"
     id: tcrc
     on_value_range:
         - above: 5.0
           then:
-            - switch.turn_off: crankcase
+          #  - switch.turn_off: crankcase
         - below: 5.0
           then:
-            - switch.turn_on: crankcase
+          #  - switch.turn_on: crankcase
             - switch.turn_off: compressor
             - switch.turn_off: fan
             - switch.turn_off: four_wv
@@ -194,23 +195,21 @@ sensor:
 #wire compressor external unit relay via HT pressure cut off valve to avoid overpressure.
 
 #i2c:
-#  sda: SCLK
-#  scl: CS
+#  sda: D8
+#  scl: D6
 
 #font:
-#  - file: 'config/slkscr.ttf'
-#    id: font1
-#    size: 8
+# - file: 'config/slkscr.ttf'
+#   id: font1
+#   size: 8
 
 #display:
 #  - platform: ssd1306_i2c
-#    model: "SH1106 128x64"
+#    model: "SSD1306 128x64"
 #    reset_pin: D0
 #    address: 0x3C
 #    lambda: |-
-#      // Print "Mitt Smarta Hus" in top center.
-#      it.printf(64, 0, id(font1), TextAlign::TOP_CENTER, "Mitt Smarta Hus");
-#      }
+#      it.print(0, 0, id(font1), "Hello World!");
 
 button:
  - platform: template
@@ -234,47 +233,51 @@ switch:
     id: compressor
     restore_mode: ALWAYS_OFF
     inverted: true
-    interlock: crankcase
+  #  interlock: crankcase
   - platform: gpio
     name: "HP Fan"
     pin: D2
     id: fan
     restore_mode: ALWAYS_OFF
     inverted: true
-  - platform: gpio
-    name: "HP Circulating pump"
-    pin: D6
-    restore_mode: ALWAYS_OFF
-    inverted: true
-    id: circulation
+#  - platform: gpio
+  #  name: "HP Circulating pump"
+ #   pin: D6
+   # restore_mode: ALWAYS_OFF
+   # inverted: true
+  #  id: circulation
   - platform: gpio
     name: "HP Heat mode selector 4wv" #on: heat, off: cool
     pin: D4
     restore_mode: ALWAYS_OFF
     inverted: true
     id: four_wv
-  - platform: gpio
-    name: "HP Crank heater"
-    pin: D8
-    restore_mode: ALWAYS_OFF
-    inverted: true
-    id: crankcase
-    interlock: compressor
+ ## - platform: gpio
+ #   name: "HP Crank heater"
+ #   pin: D8
+ #   restore_mode: ALWAYS_OFF
+ #   inverted: true
+ #   id: crankcase
+ #   interlock: compressor
+
+
+#safety stop
+#noninverted -> meant to shutdown all AC inputs if LOW
 
   - platform: gpio
     name: "HP safety_stop" #needs power to enable AC out , disables all HV stuff
     pin: D5
-    #restore_mode: ALWAYS_ON #safe mode on
+    restore_mode: ALWAYS_ON #safe mode on
     inverted: yes
     id: safety_stop
-    restore_mode: RESTORE_DEFAULT_ON
+    #restore_mode: RESTORE_DEFAULT_ON
 
     on_turn_on: #safety_stop switch on - FAIL
       - logger.log: "Arming safety_stop"
       - switch.turn_off: fan
       - switch.turn_off: compressor
       - switch.turn_off: four_wv
-      - switch.turn_off: circulation
+   #   - switch.turn_off: circulation
       - climate.control:
           id: HP_Controller
           mode: "OFF"
@@ -284,7 +287,7 @@ switch:
       - switch.turn_off: compressor
       - switch.turn_off: four_wv
       - logger.log: "Disarming safety_stop - delay 10s"
-      - switch.turn_off: circulation
+    #  - switch.turn_off: circulation
       - climate.control:
           id: HP_Controller
           mode: "OFF"    #safety_stop precaution
@@ -296,8 +299,8 @@ switch:
   - platform: restart
     name: "HP Controller Restart"
 
+# controller
 
-# Example dual-point configuration entry
 climate:
   - platform: bang_bang
 
@@ -308,19 +311,22 @@ climate:
     heat_action:
 
       - switch.turn_on: four_wv
+      - logger.log: "4WV ON"
       - delay: 1s
+
       - switch.turn_on: fan
-      - delay: 1s
-      - switch.turn_on: circulation
-      - delay: 2s
+      - logger.log: "FAN ON"
+      - delay: 3s
+     # - switch.turn_on: circulation
+      #- delay: 2s
       - switch.turn_on: compressor
-      - logger.log: "Heating on"
+      - logger.log: "CP ON"
     idle_action:
       - switch.turn_off: fan
       - switch.turn_off: compressor
       - switch.turn_off: four_wv
-      - logger.log: "Heating off + delay 1min"
-      - switch.turn_off: circulation
+      - logger.log: "IDLE: ALL off + delay 1min"
+     # - switch.turn_off: circulation
       - delay: 1 min
 
     visual:
