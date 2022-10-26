@@ -1,4 +1,4 @@
-# HeatPumpControlerEspHOME
+# Heat Pump Controller EspHOME
 heat pump controler open esphome at esp8266
 
 #inspiration https://github.com/openhp/HeatPumpController/
