@@ -5,47 +5,13 @@
 
 #bugs: on restart it triggers all relays for a short time
 
-#<<: !include secrets.yaml
 
 
-esphome:
+#AC wiring: safety_stop switch on AC input
+#connect safety_stop to AC in on all other relays
+#in any situation, safety_stop stops all AC action
+#wire compressor external unit relay via HT pressure cut off valve to avoid overpressure.
 
-  name: esp-klima
-
-  on_boot:
-    priority: 700.0
-      # ...
-    then:
-      - switch.turn_on: safety_stop
-
-
-
-esp8266:
-  board: nodemcuv2
-
-
-# Enable Home Assistant API
-api:
-  password: !secret apipass
-  reboot_timeout: 900s
-ota:
-  password: !secret otapass
-
-wifi:
-  reboot_timeout: 900s
-  power_save_mode: none
-  networks:
-  - ssid: !secret wifi_ssid2
-    password: !secret wifi_password2
-  - ssid: !secret wifi_ssid3
-    password: !secret wifi_password3
-  - ssid: !secret wifi_ssid
-    password: !secret wifi_password
-
-
-  # Enable fallback hotspot (captive portal) in case wifi connection fails
-
-#mqtt_host: !secret mqtt_host
 
 # Abbr.	Full name
 #Tae	after evaporator
@@ -84,30 +50,54 @@ wifi:
 #HP	heat pump
 
 
+#<<: !include secrets.yaml
+
+
+esphome:
+  name: esp-klima
+  on_boot:
+    priority: 700.0
+      # ...
+    then:
+      - switch.turn_on: safety_stop
+
+esp8266:
+  board: nodemcuv2
+
+
+# Enable Home Assistant API
+api:
+  password: !secret apipass
+  reboot_timeout: 900s
+
+ota:
+  password: !secret otapass
+
+wifi:
+  reboot_timeout: 900s
+  power_save_mode: none
+  networks:
+  - ssid: !secret wifi_ssid2
+    password: !secret wifi_password2
+  - ssid: !secret wifi_ssid3
+    password: !secret wifi_password3
+  - ssid: !secret wifi_ssid
+    password: !secret wifi_password
+
 logger:
- # baud_rate: 0
+
+#mqtt_host: !secret mqtt_host
 
 #mqtt:
 #  broker: !secret mqtt_host
  # id: mqtt_client
  # Example configuration entry
+
+#temp sensors hub
 dallas:
   - pin: D7
     update_interval: 10s
     id: temps
-
-#number:
-#  - platform: template
-#    name: "temp update frequency slider"
-#    id: "Slider"
-#    step: 1
-#    min_value: 1
-#    max_value: 100
-#    mode: slider
-#    set_action:
-#    - logger.log: Slider
-  #    then:
-   #     - lambda:  id(temps) = x;
 
 #Individual sensors
 
@@ -181,18 +171,13 @@ sensor:
           #  - switch.turn_off: crankcase
         - below: 5.0
           then:
+            - switch.turn_on: safety_stop
           #  - switch.turn_on: crankcase
             - switch.turn_off: compressor
             - switch.turn_off: fan
             - switch.turn_off: four_wv
             - delay: 1 min
-            - logger.log: "Heating crankcase"
-
-
-#AC wiring: safety_stop switch on AC input
-#connect safety_stop to AC in on all other relays
-#in any situation, safety_stop stops all AC action
-#wire compressor external unit relay via HT pressure cut off valve to avoid overpressure.
+            - logger.log: "Heating crankcase - safety armed"
 
 #i2c:
 #  sda: D8
@@ -219,12 +204,10 @@ button:
        - logger.log: "defrost Pressed"
        - switch.turn_off: four_wv
        - switch.turn_on: compressor
-       - delay: 10 s
+       - delay: 30 s
        - switch.turn_on: safety_stop
        - delay: 1 s
        - switch.turn_off: safety_stop
-
-
 
 switch:
   - platform: gpio
@@ -233,7 +216,7 @@ switch:
     id: compressor
     restore_mode: ALWAYS_OFF
     inverted: true
-  #  interlock: crankcase
+
   - platform: gpio
     name: "HP Fan"
     pin: D2
@@ -274,8 +257,9 @@ switch:
 
     on_turn_on: #safety_stop switch on - FAIL
       - logger.log: "Arming safety_stop"
-      - switch.turn_off: fan
+
       - switch.turn_off: compressor
+      - switch.turn_off: fan
       - switch.turn_off: four_wv
    #   - switch.turn_off: circulation
       - climate.control:
@@ -307,20 +291,23 @@ climate:
     name: "HP_Controller"
     sensor: tho
     default_target_temperature_low: 30 °C
-    default_target_temperature_high: 33 °C
+    default_target_temperature_high: 35 °C
     heat_action:
 
       - switch.turn_on: four_wv
       - logger.log: "4WV ON"
       - delay: 1s
 
-      - switch.turn_on: fan
-      - logger.log: "FAN ON"
-      - delay: 3s
+
+     # - delay: 3s
      # - switch.turn_on: circulation
       #- delay: 2s
       - switch.turn_on: compressor
       - logger.log: "CP ON"
+      - delay: 3s
+      - switch.turn_on: fan
+      - logger.log: "FAN ON"
+
     idle_action:
       - switch.turn_off: fan
       - switch.turn_off: compressor
@@ -331,7 +318,7 @@ climate:
 
     visual:
       min_temperature: 18
-      max_temperature: 60
+      max_temperature: 50
     id: "HP_Controller"
 
 web_server:
