@@ -104,9 +104,24 @@ dallas:
 sensor:
   - platform: dallas
     address: 0x9bea5db81e64ff28
-    name: "HP Outdoor after evaporator - Tae"
+    name: "HP Outdoor compressed - Tae"
     id: tae
-#add temperature ranges
+    on_value_range:
+      - above: 62.0
+        below: 73.0
+        then:
+          #- switch.turn_on: safety_stop
+          - logger.log: "High temp Tae, calling cool off"
+          - switch.turn_off: compressor
+          - delay: 3 min
+         # - logger.log: "High temp Tae, resuming idle"
+         # - switch.turn_on: compressor
+      - above: 73.0
+        then:
+          - switch.turn_on: safety_stop
+          - logger.log: "tae fail"
+
+#add temperature ranges       max  65 , safe value 60
   - platform: dallas
     address: 0xd16840831e64ff28
     name: "HP Outdoor Unit before evaporator - Tbe"
@@ -117,7 +132,8 @@ sensor:
     name: "HP Indoor Unit hot out - Tho"
     id: tho
     on_value_range:
-        - above: 65.0
+
+        - above: 60.0
           then:
             - switch.turn_on: safety_stop
             - logger.log: "tbc fail"
@@ -126,7 +142,7 @@ sensor:
          #   - switch.turn_off: safety_stop
   - platform: dallas
     address: 0x5287879f1e64ff28
-    name: "HP Indoor Unit Hot In - Thi"
+    name: "HP Indoor CircPump Hot In - Thi"
     id: thi
     on_value_range:
         - above: 65.0
@@ -179,6 +195,11 @@ sensor:
             - delay: 1 min
             - logger.log: "Heating crankcase - safety armed"
 
+  - platform: homeassistant
+    name: "TUV From Home Assistant"
+    entity_id: sensor.sklep_strojovna_temperature
+    id: buffer
+
 #i2c:
 #  sda: D8
 #  scl: D6
@@ -223,18 +244,21 @@ switch:
     id: fan
     restore_mode: ALWAYS_OFF
     inverted: true
-#  - platform: gpio
-  #  name: "HP Circulating pump"
- #   pin: D6
-   # restore_mode: ALWAYS_OFF
-   # inverted: true
-  #  id: circulation
+  - platform: gpio
+    name: "HP Circulating pump"
+    pin: D6
+    restore_mode: ALWAYS_OFF
+    inverted: true
+    id: circulation
   - platform: gpio
     name: "HP Heat mode selector 4wv" #on: heat, off: cool
     pin: D4
     restore_mode: ALWAYS_OFF
     inverted: true
     id: four_wv
+#disabled - routed via magnetic contactor, might be directly connected
+#check heater operation - if it disables itself at some temp
+
  ## - platform: gpio
  #   name: "HP Crank heater"
  #   pin: D8
@@ -287,18 +311,14 @@ switch:
 
 climate:
   - platform: bang_bang
-
     name: "HP_Controller"
-    sensor: tho
-    default_target_temperature_low: 30 °C
-    default_target_temperature_high: 35 °C
+    sensor: tbc
+    default_target_temperature_low: 48 °C
+    default_target_temperature_high: 51 °C
     heat_action:
-
       - switch.turn_on: four_wv
       - logger.log: "4WV ON"
       - delay: 1s
-
-
      # - delay: 3s
      # - switch.turn_on: circulation
       #- delay: 2s
@@ -309,17 +329,38 @@ climate:
       - logger.log: "FAN ON"
 
     idle_action:
-      - switch.turn_off: fan
+     #
       - switch.turn_off: compressor
-      - switch.turn_off: four_wv
+
       - logger.log: "IDLE: ALL off + delay 1min"
      # - switch.turn_off: circulation
-      - delay: 1 min
-
+      - delay: 6 min
+      - switch.turn_off: four_wv
+      - switch.turn_off: fan
     visual:
-      min_temperature: 18
-      max_temperature: 50
+      min_temperature: 40
+      max_temperature: 60
     id: "HP_Controller"
+
+  - platform: bang_bang
+    name: "HP automation"
+    sensor: buffer
+    default_target_temperature_low: 40 °C
+    default_target_temperature_high: 45 °C
+    heat_action:
+      - logger.log: "test ON"
+      - climate.control:
+          id: HP_Controller
+          mode: "HEAT"
+
+    idle_action:
+      - logger.log: "test OFF"
+      - climate.control:
+          id: HP_Controller
+          mode: "OFF"
+    visual:
+      min_temperature: 30
+      max_temperature: 60
 
 web_server:
   port: 80
