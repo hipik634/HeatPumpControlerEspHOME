@@ -17,6 +17,8 @@ if temp is lower then preset, it starts the script - enables fan, compressor and
 
 draws all to HAOS (Home Assistant)
 
+https://github.com/hipik634/HeatPumpControlerEspHOME/blob/main/Screenshot_20221029-201442_Home%20Assistant.jpg?raw=true
+
 
 
 
