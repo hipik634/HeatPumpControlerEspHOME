@@ -1,0 +1,452 @@
+#heat pump controller by hipik
+#inspiration https://github.com/openhp/HeatPumpController/
+#no EEV module yet/no need on my side, got TXV
+#meant to be used standalone with HA as an option to visualize
+
+#bugs: on restart it triggers all relays for a short time
+
+
+
+#AC wiring: safety_stop switch on AC input
+#connect safety_stop to AC in on all other relays
+#in any situation, safety_stop stops all AC action
+#wire compressor external unit relay via HT pressure cut off valve to avoid overpressure.
+
+
+# Abbr.	Full name
+#Tae	after evaporator
+#Tbe	before evaporator
+#Tci	cold side "input"
+#Tco	cold side "output"
+#Tbc	before condenser
+#Tac	after condenser
+#Thi	hot side "input"
+#Tho	hot side "output"
+#Tcrc	crankcase (compressor itself)
+#The additional sensor used in "swimming pool heater" or "water tank heater" schemes, check SETPOINT_TS1 option:
+
+#Abbr.	Full name
+#Ts1	additional sensor1
+#Additional sensors, disabled and not used by default:
+
+#Abbr.	Full name
+#Treg	regenerator temperature
+#Ts2	additional sensor2
+#Relays:
+
+#Abbr.	Full name
+#RCRCH	crankcase heater relay
+#RC	cold side water pump relay
+#RH	cold side water pump relay
+#RP	heat pump (compressor) relay
+#Other:
+
+#Abbr.	Full name
+#LSM	LastStopCause
+#LSC	LastStartMessage
+#CWP/CCP	cold side water (circulating) pump
+#HWP/HCP	cold side water (circulating) pump
+#EEVP	EEV position
+#HP	heat pump
+
+
+#<<: !include secrets.yaml
+
+
+esphome:
+  name: esp-klima
+  #on_boot:
+   # priority: 700.0
+      # ...
+    #then:
+    #  - switch.turn_on: safety_stop
+
+esp32:
+  board: esp32doit-devkit-v1
+
+
+# Enable Home Assistant API
+api:
+  password: !secret apipass
+  reboot_timeout: 600s
+
+ota:
+  password: !secret otapass
+
+wifi:
+  reboot_timeout: 1800s
+  power_save_mode: none
+  networks:
+
+  - ssid: !secret wifi_ssid #bimbam1_plus
+    password: !secret wifi_password
+  - ssid: !secret wifi_ssid4       #bimbam1
+    password: !secret wifi_password4
+ # - ssid: !secret wifi_ssid2     #interfernet
+  #  password: !secret wifi_password2
+
+logger:
+
+#mqtt_host: !secret mqtt_host
+
+#mqtt:
+#  broker: !secret mqtt_host
+ # id: mqtt_client
+ # Example configuration entry
+
+#temp sensors hub
+dallas:
+  - pin: GPIO32
+    update_interval: 1s
+    id: temps
+
+##################################Individual sensors
+
+sensor:
+  - platform: dallas
+    address: 0x9bea5db81e64ff28
+    name: "HP Outdoor compressed - Tae"
+    id: tae
+    filters:
+    - median:
+    on_value_range:
+      - above: 60.0
+        below: 90.0
+        then:
+          #- switch.turn_on: safety_stop
+          #- logger.log: "High temp Tae, calling cool off"
+          #- switch.turn_off: compressor
+          #- delay: 3 min
+         # - logger.log: "High temp Tae, resuming idle"
+         # - switch.turn_on: compressor
+      - above: 90.0
+        then:
+          - switch.turn_on: safety_stop
+          - logger.log: "tae fail"
+
+
+#add temperature ranges
+  - platform: dallas
+    address: 0xd16840831e64ff28
+    name: "HP Outdoor Unit before evaporator - Tbe"
+    id: tbe
+    filters:
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+#add temperature ranges
+  - platform: dallas
+    address: 0x8ead46831e64ff28
+    name: "HP Indoor Unit hot out - Tho"
+    id: tho
+    filters:
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+    on_value_range:
+
+        - above: 60.0
+          then:
+            - switch.turn_on: safety_stop
+            - logger.log: "tbc fail"
+       # - below: 5.0
+        #  then:
+         #   - switch.turn_off: safety_stop
+  - platform: dallas
+    filters:
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+    address: 0x5287879f1e64ff28
+    name: "HP Indoor CircPump Hot In - Thi"
+    id: thi
+    on_value_range:
+        - above: 65.0
+          then:
+            - switch.turn_on: safety_stop
+            - logger.log: "tbi fail"
+       # - below: 5.0
+        #  then:
+         #   - switch.turn_off: safety_stop
+  - platform: dallas
+    address: 0xba5cbe9f1e64ff28
+    name: "HP Indoor before condenser - Tbc"
+    id: tbc
+    filters:
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+    on_value_range:
+        - above: 90.0
+          then:
+            - switch.turn_on: safety_stop
+            - logger.log: "tbc fail"
+       # - below: 50.0
+        #  then:
+         #   - switch.turn_off: safety_stop
+  - platform: dallas
+    address: 0x536db7931e64ff28
+    name: "HP Indoor after condenser - Tac"
+    id: tac
+    filters:
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+    on_value_range:
+        - above: 75.0
+          then:
+            - switch.turn_on: safety_stop
+            - logger.log: "tac fail"
+       # - below: 50.0
+        #  then:
+         #   - switch.turn_off: safety_stop
+
+  - platform: dallas
+    address: 0xda99c59f1e64ff28
+    name: "HP Outdoor Compressor temp - Tcc"
+    id: tcrc
+    filters:
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+    on_value_range:
+        - above: 50.0
+          then:
+            - switch.turn_off: safety_stop
+        - below: 5.0
+          then:
+            - switch.turn_on: safety_stop
+          #  - switch.turn_on: crankcase
+            - switch.turn_off: compressor
+            - switch.turn_off: fan
+            - switch.turn_off: four_wv
+            - delay: 1 min
+            - logger.log: "Heating crankcase - safety armed"
+
+  - platform: homeassistant
+    name: "TUV From Home Assistant"
+    entity_id: sensor.sklep_strojovna_temperature
+    id: buffer
+    #update_interval: 15s
+    filters:
+    - median:
+        window_size: 15
+#i2c:
+#  sda: D8
+#  scl: D6
+
+#font:
+# - file: 'config/slkscr.ttf'
+#   id: font1
+#   size: 8
+
+#display:
+#  - platform: ssd1306_i2c
+#    model: "SSD1306 128x64"
+#    reset_pin: D0
+#    address: 0x3C
+#    lambda: |-
+#      it.print(0, 0, id(font1), "Hello World!");
+
+button:
+ - platform: template
+   name: defrost
+   on_press:
+     then:
+       - delay: 2 min
+       - logger.log: "defrost Pressed"
+       - switch.turn_off: four_wv
+       - switch.turn_on: circulation
+       - delay: 5 s
+       - switch.turn_on: compressor
+       - delay: 2 min
+       - switch.turn_off: compressor
+       - switch.turn_on: safety_stop
+       - delay: 5 s
+       - switch.turn_off: safety_stop
+
+switch:
+  - platform: gpio
+    name: "HP Compressor"
+    pin: GPIO33
+    id: compressor
+    restore_mode: ALWAYS_OFF
+    inverted: true
+    interlock: safety_stop
+
+  - platform: gpio
+    name: "HP Fan"
+    pin: GPIO25
+    id: fan
+    restore_mode: ALWAYS_OFF
+    inverted: true
+  - platform: gpio
+    name: "HP Circulating pump"
+    pin: GPIO26
+    restore_mode: ALWAYS_OFF
+    inverted: true
+    id: circulation
+  - platform: gpio
+    name: "HP Heat mode selector 4wv" #on: heat, off: cool
+    pin: GPIO27
+    restore_mode: ALWAYS_OFF
+    inverted: true
+    id: four_wv
+#disabled - routed via magnetic contactor, might be directly connected
+#check heater operation - if it disables itself at some temp
+
+  - platform: gpio
+    name: "HP Crank heater"
+    pin: GPIO14
+    restore_mode: ALWAYS_OFF
+    inverted: true
+    id: crankcase
+    interlock: compressor
+
+  - platform: gpio
+    name: "HP 50Hz VFD"
+    pin: GPIO12
+    restore_mode: ALWAYS_OFF
+    inverted: true
+    id: vfd_start
+
+
+
+#safety stop
+#noninverted -> meant to shutdown all AC inputs if LOW
+
+  - platform: gpio
+    name: "HP safety_stop" #needs power to enable AC out , disables all HV stuff
+    pin: GPIO13
+    #restore_mode: ALWAYS_ON #safe mode on
+    inverted: yes
+    id: safety_stop
+    restore_mode: RESTORE_DEFAULT_OFF
+    interlock: compressor
+
+    on_turn_on: #safety_stop switch on - FAIL
+      - logger.log: "Arming safety_stop"
+
+      - switch.turn_off: compressor
+      - switch.turn_off: fan
+      - switch.turn_off: four_wv
+      - switch.turn_off: circulation
+      - climate.control:
+          id: HP_Controller
+          mode: "OFF"
+      - climate.control:
+          id: HP_automation
+          mode: "OFF"
+
+    on_turn_off:  #safety_stop switch off - ready to go
+      - switch.turn_off: fan
+      - switch.turn_off: compressor
+      - switch.turn_off: four_wv
+      - logger.log: "Disarming safety_stop - delay 10s"
+    #  - switch.turn_off: circulation
+      - climate.control:
+          id: HP_Controller
+          mode: "OFF"
+      - climate.control:
+          id: HP_automation
+          mode: "OFF"
+      - climate.control:
+          id: HP_automation
+          mode: "HEAT"
+
+  - platform: restart
+    name: "HP Controller Restart"
+
+# controller
+
+climate:
+  - platform: bang_bang
+    name: "HP_Controller"
+    sensor: tae
+    #2022-11-01 taktika : tae 58-63
+    #2022-11-01 taktika : tbc 48-55
+    default_target_temperature_low: 39 °C
+    default_target_temperature_high: 44 °C
+    heat_action:
+      - switch.turn_on: four_wv
+      - logger.log: "4WV ON"
+      - delay: 1s
+      # - delay: 3s
+      - switch.turn_on: circulation
+      #- delay: 2s
+      - switch.turn_on: compressor
+      - logger.log: "CP ON"
+      - delay: 3s
+      - switch.turn_on: fan
+      - logger.log: "FAN ON"
+
+    idle_action:
+      - switch.turn_off: compressor
+      - logger.log: "IDLE: ALL off + delay 1min"
+      - delay: 1 min
+      - switch.turn_off: four_wv
+
+
+#
+#      - switch.turn_off: circulation
+    visual:
+      min_temperature: 40
+      max_temperature: 99
+    id: "HP_Controller"
+
+  - platform: bang_bang
+    name: "HP_automation"
+    id: HP_automation
+    sensor: buffer
+    default_target_temperature_low: 54 °C
+    default_target_temperature_high: 78 °C
+
+    heat_action:
+      - logger.log: "HP auto ON"
+      - climate.control:
+          id: HP_Controller
+          mode: "HEAT"
+
+    idle_action:
+      - logger.log: "HP auto OFF"
+      - climate.control:
+          id: HP_Controller
+          mode: "OFF"
+      - delay: 1 min
+      - switch.turn_off: four_wv
+      - switch.turn_off: fan
+      - switch.turn_off: circulation
+
+    visual:
+      min_temperature: 30
+      max_temperature: 50
+
+  - platform: bang_bang
+    name: "HP_preheat"
+    id: HP_preheat
+    sensor: tcrc
+    default_target_temperature_low: 5 °C
+    default_target_temperature_high: 10 °C
+
+    heat_action:
+      - logger.log: "HP auto ON"
+      - climate.control:
+          id: HP_Controller
+          mode: "HEAT"
+      - switch.turn_on: crankcase
+    idle_action:
+      - logger.log: "HP auto OFF"
+      - switch.turn_off: crankcase
+
+    visual:
+      min_temperature: -20
+      max_temperature: 20
+
+web_server:
+  port: 80
