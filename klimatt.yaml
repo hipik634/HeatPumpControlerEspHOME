@@ -1,0 +1,747 @@
+#heat pump controller by hipik
+#inspiration https://github.com/openhp/HeatPumpController/
+#no EEV module yet/no need on my side, got TXV
+#meant to be used standalone with HA as an option to visualize
+
+#bugs: on restart it triggers all relays for a short time
+
+#24:6f:28:96:5c:58 tg
+#E8:9F:6D:92:7C:A7	 
+
+#AC wiring: safety_stop switch on AC input
+#connect safety_stop to AC in on all other relays
+#in any situation, safety_stop stops all AC action
+#wire compressor external unit relay via HT pressure cut off valve to avoid overpressure.
+
+
+# Abbr.	Full name
+#Tae	after evaporator
+#Tbe	before evaporator
+#Tci	cold side "input"
+#Tco	cold side "output"
+#Tbc	before condenser
+#Tac	after condenser
+#Thi	hot side "input"
+#Tho	hot side "output"
+#Tcrc	crankcase (compressor itself)
+#The additional sensor used in "swimming pool heater" or "water tank heater" schemes, check SETPOINT_TS1 option:
+
+#Abbr.	Full name
+#Ts1	additional sensor1
+#Additional sensors, disabled and not used by default:
+
+#Abbr.	Full name
+#Treg	regenerator temperature
+#Ts2	additional sensor2
+#Relays:
+
+#Abbr.	Full name
+#RCRCH	crankcase heater relay
+#RC	cold side water pump relay
+#RH	cold side water pump relay
+#RP	heat pump (compressor) relay
+#Other:
+
+#Abbr.	Full name
+#LSM	LastStopCause
+#LSC	LastStartMessage
+#CWP/CCP	cold side water (circulating) pump
+#HWP/HCP	cold side water (circulating) pump
+#EEVP	EEV position
+#HP	heat pump
+
+
+#<<: !include secrets.yaml
+
+globals:
+    # This variable stores the current mode chosen by pressing the buttons (physical or digital)
+  - id: defrost_value
+    type: int
+    restore_value: no
+    initial_value: "-15"
+
+
+esphome:
+  name: esp-klima
+  #on_boot:
+   # priority: 700.0
+      # ...
+    #then:
+    #  - switch.turn_on: safety_stop
+
+esp32:
+  board: esp32dev
+
+
+# Enable Home Assistant API
+api:
+  password: !secret apipass
+  reboot_timeout: 600s
+
+ota:
+  password: !secret otapass
+
+wifi:
+  reboot_timeout: 1800s
+  power_save_mode: none
+  networks:
+
+  - ssid: !secret wifi_ssid #bimbam1_plus
+    password: !secret wifi_password
+ # - ssid: !secret wifi_ssid4       #bimbam1
+ #   password: !secret wifi_password4
+ # - ssid: !secret wifi_ssid2     #interfernet
+  #  password: !secret wifi_password2
+
+
+logger:
+  level: ERROR
+
+
+#mqtt:
+#  broker: !secret mqtt_host
+#  id: espklima
+
+
+
+
+
+font:
+  - file: 'config/slkscr.ttf'
+    id: font1
+    size: 16
+
+
+
+# controllers  SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+
+spi:
+  clk_pin: GPIO18
+  mosi_pin: GPIO19
+
+display:
+  - platform: st7789v
+    model: TTGO TDisplay 135x240
+    backlight_pin: GPIO4
+    cs_pin: GPIO5
+    dc_pin: GPIO16
+    reset_pin: GPIO23
+    lambda: |-
+      it.printf(0, 0, id(font1), TextAlign::TOP_RIGHT, "HeatPump");
+      if (id(bufferlocal).has_state()) {
+        it.printf(127, 23, id(font1), TextAlign::TOP_RIGHT , "Buffer:%.1f", id(bufferlocal).state);
+        it.printf(127, 46, id(font1), TextAlign::TOP_RIGHT , "Compr:%.1f", id(tae).state);
+        it.printf(127, 69, id(font1), TextAlign::TOP_RIGHT , "Tho:%.1f", id(tho).state);
+        it.printf(127, 92, id(font1), TextAlign::TOP_RIGHT , "Outs:%.1f", id(outside_temp).state);
+        it.printf(127, 115, id(font1), TextAlign::TOP_RIGHT , "Evap:%.1f", id(tbe).state);
+       // it.printf(127, 138, id(font1), TextAlign::TOP_RIGHT , "Auto: ", id(HP_automation).mode);
+       // it.printf(127, 161, id(font1), TextAlign::TOP_RIGHT , "Contr: ", id(HP_Controller).mode);
+      }
+     
+
+climate:
+  - platform: bang_bang
+    name: "HP_Controller"
+
+    sensor: tae
+    #2022-11-01 taktika : tae 58-63
+    #2022-11-01 taktika : tbc 48-55
+    default_target_temperature_low: 50 °C
+    default_target_temperature_high: 82 °C
+    heat_action:
+      - switch.turn_on: four_wv
+      - switch.turn_on: circulation
+      - delay: 1s
+      # - delay: 3s
+
+      #- delay: 2s
+      - switch.turn_on: compressor
+      - delay: 3s
+      - switch.turn_on: fan
+      - logger.log:
+          level: WARN
+          format: "CONTROLLER HEAT ON"
+    idle_action:
+      - switch.turn_off: compressor
+      - delay: 20 s
+      - switch.turn_off: four_wv
+      - switch.turn_off: circulation
+      - switch.turn_off: fan
+      - logger.log:
+          level: WARN
+          format: "CONTROLLER IDLE"
+      - delay: 5 min
+
+
+
+#
+#      - switch.turn_off: circulation
+    visual:
+      min_temperature: 20
+      max_temperature: 99
+    id: "HP_Controller"
+
+  - platform: bang_bang
+    name: "HP_automation"
+    id: HP_automation
+    sensor: bufferlocal
+    default_target_temperature_low: 34 °C
+    default_target_temperature_high: 36 °C
+
+    heat_action:
+      - logger.log:
+          level: WARN
+          format: "AUTOMATION HEAT"
+      - climate.control:
+          id: HP_Controller
+          mode: "HEAT"
+      - climate.control:
+          id: HP_defrost
+          mode: "OFF"
+    idle_action:
+      - logger.log:
+          level: WARN
+          format: "AUTOMATION IDLE"
+      - climate.control:
+          id: HP_Controller
+          mode: "OFF"
+
+      - switch.turn_off: four_wv
+      - switch.turn_off: fan
+      - switch.turn_off: circulation
+
+
+
+    visual:
+      min_temperature: 30
+      max_temperature: 50
+
+  - platform: bang_bang
+    name: "HP_preheat"
+    id: HP_preheat
+    sensor: tcrc
+    default_target_temperature_low: 5 °C
+    default_target_temperature_high: 10 °C
+
+    heat_action:
+      - logger.log: "HP auto ON"
+      - climate.control:
+          id: HP_Controller
+          mode: "HEAT"
+      - switch.turn_on: crankcase
+      - logger.log:
+          level: WARN
+          format: "PREHEAT HEAT"
+    idle_action:
+
+      - logger.log: "HP auto OFF"
+      - switch.turn_off: crankcase
+
+      - logger.log:
+          level: WARN
+          format: "PREHEAT IDLE"
+
+    visual:
+      min_temperature: -20
+      max_temperature: 20
+
+  - platform: bang_bang
+    name: "HP_defrost"
+    id: HP_defrost
+    sensor: tae
+    default_target_temperature_low: 40 °C
+    default_target_temperature_high: 50 °C
+
+    heat_action:
+      - logger.log:
+          level: WARN
+          format: "defrost controller HEAT"
+      - climate.control:
+          id: HP_Controller
+          mode: "OFF"
+      - switch.turn_off: four_wv
+      - switch.turn_off: fan
+      - switch.turn_on: circulation
+      - switch.turn_on: compressor
+
+
+    idle_action:
+      - logger.log:
+          level: WARN
+          format: "defrost controller IDLE"
+      - switch.turn_off: compressor
+      - switch.turn_on: circulation
+
+
+
+
+
+
+    visual:
+      min_temperature: -20
+      max_temperature: 80
+
+
+# controllers END SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+
+
+
+#temp sensors hub
+dallas:
+  - pin: GPIO27
+    update_interval: 2s
+    id: temps
+  - pin: GPIO26
+    update_interval: 2s
+    id: temps2
+##################################Individual sensors
+
+sensor:
+
+  - platform: dht
+    model: DHT11
+    update_interval: 10s
+    pin: GPIO21
+    temperature:
+      name: "Outside Temperature"
+      id: outside_temp
+      filters:
+      - median:
+      - filter_out: nan
+    
+    humidity:
+      name: "Outside Humidity"
+      id: outside_hum
+      filters:
+      - median:
+      - filter_out: nan
+
+  - platform: dallas
+    dallas_id: temps
+    address: 0x9bea5db81e64ff28
+    name: "HP Outdoor compressed - Tae"
+    id: tae
+    filters:
+    - filter_out: nan
+    - median:
+   #     window_size: 11
+   #     send_every:  7
+   #     send_first_at: 2
+    on_value_range:
+      - above: 60.0
+        below: 90.0
+        then:
+          #- switch.turn_on: safety_stop
+          #- logger.log: "High temp Tae, calling cool off"
+          #- switch.turn_off: compressor
+          #- delay: 3 min
+         # - logger.log: "High temp Tae, resuming idle"
+         # - switch.turn_on: compressor
+      - above: 90.0
+        then:
+          - switch.turn_on: safety_stop
+          - logger.log:
+              level: ERROR
+              format: "tae fail"
+
+
+#add temperature ranges
+  - platform: dallas
+    dallas_id: temps
+    address: 0xd16840831e64ff28
+    name: "HP Outdoor Unit before evaporator - Tbe"
+    id: tbe
+    filters:
+    - filter_out: nan
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+    on_value_range:
+        - below: -10 # !lambda return id("defrost_value").state|float(0.0)
+        #-20
+          then:
+            - logger.log:
+                level: ERROR
+                format: "tbe ERROR - calling defrost"
+
+            - switch.turn_on: defrost
+
+
+
+#add temperature ranges
+  - platform: dallas
+    address: 0x8ead46831e64ff28
+    name: "HP Indoor Unit hot out - Tho"
+    id: tho
+    dallas_id: temps
+    filters:
+    - filter_out: nan
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+    on_value_range:
+
+        - above: 60.0
+          then:
+            - switch.turn_on: safety_stop
+            - logger.log:
+                level: ERROR
+                format: "tbc ERROR"
+       # - below: 5.0
+        #  then:
+         #   - switch.turn_off: safety_stop
+         
+  - platform: dallas
+    filters:
+    - filter_out: nan
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+    address: 0x5287879f1e64ff28
+    name: "HP Indoor CircPump Hot In - Thi"
+    id: thi
+    dallas_id: temps
+    on_value_range:
+        - above: 65.0
+          then:
+            - switch.turn_on: safety_stop
+            - logger.log:
+                level: ERROR
+                format: "tbi high ERROR"
+        - below: 8.0
+          then:
+            - switch.turn_on: safety_stop
+            - logger.log:
+                level: ERROR
+                format: "tbi low ERROR"
+  
+  - platform: dallas
+    address: 0xba5cbe9f1e64ff28
+    name: "HP Indoor before condenser - Tbc"
+    id: tbc
+    dallas_id: temps
+    filters:
+    - filter_out: nan
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+    on_value_range:
+        - above: 90.0
+          then:
+            - switch.turn_on: safety_stop
+            - logger.log:
+                level: ERROR
+                format: "tbc ERROR"
+       # - below: 50.0
+        #  then:
+         #   - switch.turn_off: safety_stop
+  
+  - platform: dallas
+    address: 0x536db7931e64ff28
+    name: "HP Indoor after condenser - Tac"
+    id: tac
+    dallas_id: temps
+    filters:
+    - filter_out: nan
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+    on_value_range:
+        - above: 75.0
+          then:
+            - switch.turn_on: safety_stop
+            - logger.log:
+                level: ERROR
+                format: "tac ERROR"
+       # - below: 50.0
+        #  then:
+         #   - switch.turn_off: safety_stop
+
+  - platform: dallas
+    address: 0xda99c59f1e64ff28
+    name: "HP Outdoor Compressor temp - Tcc"
+    id: tcrc
+    dallas_id: temps
+    filters:
+    - filter_out: nan
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+    on_value_range:
+        - above: 50.0
+          then:
+            - switch.turn_off: safety_stop
+            - logger.log:
+                level: ERROR
+                format: "TCRC OVERTEMP ERROR"
+        - below: 5.0
+          then:
+            - switch.turn_on: safety_stop
+          #  - switch.turn_on: crankcase
+            - switch.turn_off: compressor
+            - switch.turn_off: fan
+            - switch.turn_off: four_wv
+            - delay: 1 min
+            - logger.log:
+                level: ERROR
+                format: "TCRC ERROR - Heating crankcase - safety armed"
+
+#add temperature ranges
+  - platform: dallas
+    address: 0x923c18e381f8ea28
+    name: "Topeni 1 - Solarbuffer"
+    id: bufferlocal
+    dallas_id: temps
+
+    filters:
+    - filter_out: nan
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+#add temperature ranges
+
+  - platform: dallas
+    address: 0xc63c53e3811f2128
+    name: "Topeni 2 - 2NP Cold"
+    id: t2
+    dallas_id: temps2
+    filters:
+    - filter_out: nan
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+
+  - platform: dallas
+    address: 0xae3cbef64866b328
+    name: "Topeni 3 - Buffer Input"
+    id: t3
+    dallas_id: temps2
+    filters:
+    - filter_out: nan
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+
+  - platform: dallas
+    address: 0x593c9ef648b1cb28
+    name: "Topeni 4 - 2NP Hot"
+    id: t4
+    dallas_id: temps2
+    filters:
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
+
+  - platform: dallas
+    address: 0x623c50f64874d028
+    name: "Topeni 1 - Primotop"
+    id: t1
+    dallas_id: temps2
+    filters:
+    
+#    - filter_out: 'unknown'
+    - filter_out: nan
+    - median:
+        window_size: 20
+        send_every: 10
+        send_first_at: 2
+        
+        
+
+  - platform: template
+    id: Slider_sensor
+    name: "Defrost temperature"
+    update_interval: 1s
+    accuracy_decimals: 0
+    #unit_of_measurement: "clk"
+    lambda: return id(defrost_value);
+
+number:
+  - platform: template
+    name: "defrost_slider"
+    id: "modeSlider"
+    initial_value: -15
+    step: 1
+    min_value: -25
+    max_value: 10
+    mode: slider
+    set_action:
+      then:
+        - lambda:  id(defrost_value) = x;
+
+
+#######################SWITCHES
+
+switch:
+  - platform: template
+    name: defrost
+    id: defrost
+    turn_on_action:
+      then:            #10 min
+       - logger.log:
+           level: ERROR
+           format: "DEFROST CALLED - 10 min defrost"
+       - switch.turn_on: boiler
+       - delay: 60 s
+       - climate.control:
+          id: HP_automation
+          mode: "OFF"
+       - climate.control:
+          id: HP_Controller
+          mode: "OFF"
+       - switch.turn_on: circulation
+       - switch.turn_on: fan
+       - delay: 60 s        #9 min
+
+       - climate.control:
+          id: HP_defrost
+          mode: "HEAT"
+
+       - delay: 90 s        #6,5
+       - switch.turn_on: fan
+       - logger.log:
+           level: ERROR
+           format: "DEFROST CALLED - flushing air, 3 min cycle"
+       - delay: 30 s         #6
+       - switch.turn_off: fan
+       - logger.log:
+           level: ERROR
+           format: "DEFROST CALLED - flushing air, vypinam po 60s"
+       - delay: 30 s          #5,5
+       - switch.turn_on: fan
+       - logger.log:
+           level: ERROR
+           format: "DEFROST CALLED - flushing air, zapinam po 60s"
+       - delay: 30 s         #5
+       - switch.turn_off: fan
+       - logger.log:
+           level: ERROR
+           format: "DEFROST CALLED - After defrost delay, 3 min"
+       - delay: 3 min        #2
+       - switch.turn_off: boiler
+
+
+       - logger.log:
+           level: ERROR
+           format: "DEFROST CALLED - finished - delay ended - HEAT on"
+       - climate.control:
+          id: HP_automation
+          mode: "HEAT"
+
+
+
+  - platform: gpio
+    name: "HP Compressor"
+    pin: GPIO33
+    id: compressor
+    restore_mode: ALWAYS_OFF
+    inverted: true
+    interlock: safety_stop
+
+  - platform: gpio
+    name: "HP Fan"
+    pin: GPIO25
+    id: fan
+    restore_mode: ALWAYS_OFF
+    inverted: true
+    
+  - platform: gpio
+    name: "HP Circulating pump"
+    pin: GPIO32
+    restore_mode: ALWAYS_OFF
+    inverted: true
+    id: circulation
+    
+  - platform: gpio
+    name: "HP Heat mode selector 4wv" #on: heat, off: cool
+    pin: GPIO17
+    restore_mode: ALWAYS_OFF
+    inverted: true
+    id: four_wv
+#disabled - routed via magnetic contactor, might be directly connected
+#check heater operation - if it disables itself at some temp
+
+  - platform: gpio
+    name: "HP Crank heater"
+    pin: GPIO13
+    restore_mode: ALWAYS_OFF
+    inverted: true
+    id: crankcase
+    #interlock: compressor
+
+  - platform: gpio
+    name: "HP Boiler"
+    pin: GPIO22
+    restore_mode: ALWAYS_OFF
+    inverted: true
+    id: boiler
+    #interlock: compressor
+
+
+
+#safety stop
+#noninverted -> meant to shutdown all AC inputs if LOW
+
+  - platform: gpio
+    name: "HP safety_stop" #needs power to enable AC out , disables all HV stuff
+    pin: GPIO21
+    #restore_mode: ALWAYS_ON #safe mode on
+    inverted: yes
+    id: safety_stop
+    restore_mode: RESTORE_DEFAULT_OFF
+    interlock: compressor
+
+    on_turn_on: #safety_stop switch on - FAIL
+      - logger.log:
+          level: ERROR
+          format: "ERROR: Arming safety_stop"
+
+      - switch.turn_off: compressor
+      - switch.turn_off: fan
+      - switch.turn_off: four_wv
+      - switch.turn_off: circulation
+      - climate.control:
+          id: HP_Controller
+          mode: "OFF"
+      - climate.control:
+          id: HP_automation
+          mode: "OFF"
+      - climate.control:
+          id: HP_defrost
+          mode: "OFF"
+
+
+    on_turn_off:  #safety_stop switch off - ready to go
+      - switch.turn_off: fan
+      - switch.turn_off: compressor
+      - switch.turn_off: four_wv
+      - logger.log:
+          level: WARN
+          format: "GO: Disarming safety_stop - delay 10s"
+    #  - switch.turn_off: circulation
+      - climate.control:
+          id: HP_Controller
+          mode: "OFF"
+      - climate.control:
+          id: HP_automation
+          mode: "OFF"
+      - climate.control:
+          id: HP_automation
+          mode: "HEAT"
+
+  - platform: restart
+    name: "HP Controller Restart"
+
+
+web_server:
+  port: 80
