@@ -58,7 +58,7 @@ globals:
   - id: defrost_value
     type: int
     restore_value: no
-    initial_value: "-15"
+    initial_value: "-10"
 
 
 esphome:
@@ -128,16 +128,24 @@ display:
     reset_pin: GPIO23
     lambda: |-
       it.printf(0, 0, id(font1), TextAlign::TOP_RIGHT, "HeatPump");
-      if (id(bufferlocal).has_state()) {
-        it.printf(127, 23, id(font1), TextAlign::TOP_RIGHT , "Buffer:%.1f", id(bufferlocal).state);
+      if (id(t_bufferlocal1).has_state()) {
+        it.printf(127, 23, id(font1), TextAlign::TOP_RIGHT , "Buffer:%.1f", id(t_bufferlocal1).state);
         it.printf(127, 46, id(font1), TextAlign::TOP_RIGHT , "Compr:%.1f", id(tae).state);
         it.printf(127, 69, id(font1), TextAlign::TOP_RIGHT , "Tho:%.1f", id(tho).state);
         it.printf(127, 92, id(font1), TextAlign::TOP_RIGHT , "Outs:%.1f", id(outside_temp).state);
         it.printf(127, 115, id(font1), TextAlign::TOP_RIGHT , "Evap:%.1f", id(tbe).state);
-       // it.printf(127, 138, id(font1), TextAlign::TOP_RIGHT , "Auto: ", id(HP_automation).mode);
-       // it.printf(127, 161, id(font1), TextAlign::TOP_RIGHT , "Contr: ", id(HP_Controller).mode);
+        it.printf(127, 138, id(font1), TextAlign::TOP_RIGHT , "DHW: ", id(dhw).state);
+        it.printf(127, 161, id(font1), TextAlign::TOP_RIGHT , "HP: ", id(hp_mode).state);
       }
      
+text_sensor:
+  - platform: template
+    name: "HP mode"
+    id: hp_mode
+
+   #  - text_sensor.template.publish:
+    #  id: hp_mode
+    #  state: !lambda 'return "HEATING";'
 
 climate:
   - platform: bang_bang
@@ -149,6 +157,9 @@ climate:
     default_target_temperature_low: 50 °C
     default_target_temperature_high: 82 °C
     heat_action:
+      - text_sensor.template.publish:
+         id: hp_mode
+         state: !lambda 'return "HEATING";'
       - switch.turn_on: four_wv
       - switch.turn_on: circulation
       - delay: 1s
@@ -162,15 +173,19 @@ climate:
           level: WARN
           format: "CONTROLLER HEAT ON"
     idle_action:
+      - text_sensor.template.publish:
+         id: hp_mode
+         state: !lambda 'return "HEAT IDLE";'
+
       - switch.turn_off: compressor
-      - delay: 20 s
+      - delay: 10 s
       - switch.turn_off: four_wv
       - switch.turn_off: circulation
       - switch.turn_off: fan
       - logger.log:
           level: WARN
           format: "CONTROLLER IDLE"
-      - delay: 5 min
+      #- delay: 5 min
 
 
 
@@ -181,10 +196,13 @@ climate:
       max_temperature: 99
     id: "HP_Controller"
 
+
+
+
   - platform: bang_bang
     name: "HP_automation"
     id: HP_automation
-    sensor: bufferlocal
+    sensor: t_bufferlocal1
     default_target_temperature_low: 34 °C
     default_target_temperature_high: 36 °C
 
@@ -215,6 +233,53 @@ climate:
     visual:
       min_temperature: 30
       max_temperature: 50
+
+
+
+
+  - platform: bang_bang
+    name: "HP_TUV"
+    id: HP_tuv
+    sensor: ind1
+    default_target_temperature_low: 40 °C
+    default_target_temperature_high: 45 °C
+
+    heat_action:
+      - text_sensor.template.publish:
+         id: hp_mode
+         state: !lambda 'return "TUV";'
+
+      - logger.log:
+          level: WARN
+          format: "TUV HEAT"
+      - climate.control:
+          id: HP_Controller
+          mode: "HEAT"
+      - climate.control:
+          id: HP_defrost
+          mode: "OFF"
+    idle_action:
+      - text_sensor.template.publish:
+         id: hp_mode
+         state: !lambda 'return "TUV idle";'
+
+      - logger.log:
+          level: WARN
+          format: "TUV IDLE"
+      - climate.control:
+          id: HP_Controller
+          mode: "OFF"
+
+      - switch.turn_off: four_wv
+      - switch.turn_off: fan
+      - switch.turn_off: circulation
+
+
+
+    visual:
+      min_temperature: 30
+      max_temperature: 50
+
 
   - platform: bang_bang
     name: "HP_preheat"
@@ -249,10 +314,13 @@ climate:
     name: "HP_defrost"
     id: HP_defrost
     sensor: tae
-    default_target_temperature_low: 40 °C
-    default_target_temperature_high: 50 °C
+    default_target_temperature_low: 54 °C
+    default_target_temperature_high: 68 °C
 
     heat_action:
+      - text_sensor.template.publish:
+         id: hp_mode
+         state: !lambda 'return "Defrost";'
       - logger.log:
           level: WARN
           format: "defrost controller HEAT"
@@ -266,6 +334,9 @@ climate:
 
 
     idle_action:
+      - text_sensor.template.publish:
+         id: hp_mode
+         state: !lambda 'return "Defrost idle";'
       - logger.log:
           level: WARN
           format: "defrost controller IDLE"
@@ -289,17 +360,39 @@ climate:
 #temp sensors hub
 dallas:
   - pin: GPIO27
-    update_interval: 2s
+    update_interval: 1s
     id: temps
   - pin: GPIO26
-    update_interval: 2s
+    update_interval: 1s
     id: temps2
 ##################################Individual sensors
 
+
+ 
+  
+
+ 
+  
+  
+ 
+ 
+ 
+  
+  
+
 sensor:
 
+  - platform: template
+    id: high_temperature_sensor
+    name: "TAE high temp"
+    filters:
+      lambda: |-
+        return (id(tae).state > 50);
+
+
+
   - platform: dht
-    model: DHT11
+    model: DHT22
     update_interval: 10s
     pin: GPIO21
     temperature:
@@ -316,6 +409,38 @@ sensor:
       - median:
       - filter_out: nan
 
+  - platform: dallas    
+    dallas_id: temps
+    address: 0x643c3af649755e28
+    name: "HP TUV in"
+    id: ind1
+    filters:
+    - filter_out: nan
+    - median:
+   #     window_size: 11
+   #     send_every:  7
+   #     send_first_at: 2
+  
+
+  - platform: dallas    
+    dallas_id: temps
+    address: 0x293cdff6494c4b28
+    name: "HP TUV out"
+    id: ind2
+    filters:
+    - filter_out: nan
+    - median:
+   #     window_size: 11
+   #     send_every:  7
+   #     send_first_at: 2
+ 
+  - platform: template
+    name: "Defrost mode"
+    id: defrost_mode
+
+
+
+
   - platform: dallas
     dallas_id: temps
     address: 0x9bea5db81e64ff28
@@ -329,7 +454,7 @@ sensor:
    #     send_first_at: 2
     on_value_range:
       - above: 60.0
-        below: 90.0
+        below: 95.0
         then:
           #- switch.turn_on: safety_stop
           #- logger.log: "High temp Tae, calling cool off"
@@ -337,7 +462,7 @@ sensor:
           #- delay: 3 min
          # - logger.log: "High temp Tae, resuming idle"
          # - switch.turn_on: compressor
-      - above: 90.0
+      - above: 95.0
         then:
           - switch.turn_on: safety_stop
           - logger.log:
@@ -495,8 +620,8 @@ sensor:
 #add temperature ranges
   - platform: dallas
     address: 0x923c18e381f8ea28
-    name: "Topeni 1 - Solarbuffer"
-    id: bufferlocal
+    name: "AKU"
+    id: t_bufferlocal1
     dallas_id: temps
 
     filters:
@@ -509,8 +634,8 @@ sensor:
 
   - platform: dallas
     address: 0xc63c53e3811f2128
-    name: "Topeni 2 - 2NP Cold"
-    id: t2
+    name: "2NP_Cold"
+    id: t_2npc
     dallas_id: temps2
     filters:
     - filter_out: nan
@@ -521,8 +646,8 @@ sensor:
 
   - platform: dallas
     address: 0xae3cbef64866b328
-    name: "Topeni 3 - Buffer Input"
-    id: t3
+    name: "Buffer_Input"
+    id: t_bufinput
     dallas_id: temps2
     filters:
     - filter_out: nan
@@ -533,8 +658,8 @@ sensor:
 
   - platform: dallas
     address: 0x593c9ef648b1cb28
-    name: "Topeni 4 - 2NP Hot"
-    id: t4
+    name: "2NP_Hot"
+    id: t_2nph
     dallas_id: temps2
     filters:
     - median:
@@ -544,8 +669,8 @@ sensor:
 
   - platform: dallas
     address: 0x623c50f64874d028
-    name: "Topeni 1 - Primotop"
-    id: t1
+    name: "Primotop"
+    id: t_primotop
     dallas_id: temps2
     filters:
     
@@ -555,6 +680,30 @@ sensor:
         window_size: 20
         send_every: 10
         send_first_at: 2
+
+
+  - platform: dallas
+    address: 0x103c57f6491f8428
+    name: "HP primotop return"
+    id: t_primotop_ret
+    dallas_id: temps2
+    filters:
+    
+#    - filter_out: 'unknown'
+    - filter_out: nan
+    
+
+  - platform: dallas
+    address: 0xa23c46f649e1c128
+    name: "HP rozdelovac return"
+    id: t_in_ret
+    dallas_id: temps2
+    filters:
+    
+#    - filter_out: 'unknown'
+    - filter_out: nan
+
+
         
         
 
@@ -570,7 +719,7 @@ number:
   - platform: template
     name: "defrost_slider"
     id: "modeSlider"
-    initial_value: -15
+    initial_value: -10
     step: 1
     min_value: -25
     max_value: 10
@@ -588,47 +737,75 @@ switch:
     id: defrost
     turn_on_action:
       then:            #10 min
+       #- binary_sensor.turn_on: defrost_mode
+       - switch.turn_on: circulation
+       - sensor.template.publish:
+           id: defrost_mode
+           state: 1
+
        - logger.log:
            level: ERROR
-           format: "DEFROST CALLED - 10 min defrost"
+           format: "DEFROST CALLED - 7 min defrost"
        - switch.turn_on: boiler
-       - delay: 60 s
+       - delay: 30 s
+       - switch.turn_off: four_wv
+       - switch.turn_off: fan
+       - delay: 30 s                   #2m
+       - sensor.template.publish:
+           id: defrost_mode
+           state: 2
        - climate.control:
           id: HP_automation
           mode: "OFF"
+
        - climate.control:
           id: HP_Controller
           mode: "OFF"
-       - switch.turn_on: circulation
-       - switch.turn_on: fan
-       - delay: 60 s        #9 min
 
+       - switch.turn_off: fan
+
+       #- switch.turn_on: fan
+       - delay: 35 s        #9 min   - controler vypina za 30s cerpadlo    2,5m
+       - switch.turn_on: circulation
+       - sensor.template.publish:
+           id: defrost_mode
+           state: 3
        - climate.control:
           id: HP_defrost
           mode: "HEAT"
-
-       - delay: 90 s        #6,5
+       - switch.turn_on: circulation
+       - delay: 120 s        #4,5
        - switch.turn_on: fan
        - logger.log:
            level: ERROR
            format: "DEFROST CALLED - flushing air, 3 min cycle"
-       - delay: 30 s         #6
+       - delay: 5 s         #4,6
+       - sensor.template.publish:
+           id: defrost_mode
+           state: 4
        - switch.turn_off: fan
        - logger.log:
            level: ERROR
            format: "DEFROST CALLED - flushing air, vypinam po 60s"
-       - delay: 30 s          #5,5
+       - delay: 30 s          #5,1
        - switch.turn_on: fan
        - logger.log:
            level: ERROR
            format: "DEFROST CALLED - flushing air, zapinam po 60s"
-       - delay: 30 s         #5
+       - delay: 5 s         #5,15
        - switch.turn_off: fan
+       - delay: 2 min       #7,15
+       - climate.control:
+          id: HP_defrost
+          mode: "OFF"
        - logger.log:
            level: ERROR
-           format: "DEFROST CALLED - After defrost delay, 3 min"
-       - delay: 3 min        #2
-       - switch.turn_off: boiler
+           format: "DEFROST CALLED - After defrost delay, 2 min"
+               #2
+       - sensor.template.publish:
+           id: defrost_mode
+           state: 5
+    #   - switch.turn_off: boiler
 
 
        - logger.log:
@@ -637,6 +814,10 @@ switch:
        - climate.control:
           id: HP_automation
           mode: "HEAT"
+
+       - sensor.template.publish:
+           id: defrost_mode
+           state: 0
 
 
 
@@ -727,7 +908,7 @@ switch:
       - switch.turn_off: four_wv
       - logger.log:
           level: WARN
-          format: "GO: Disarming safety_stop - delay 10s"
+          format: "GO: Disarming safety_stop"
     #  - switch.turn_off: circulation
       - climate.control:
           id: HP_Controller
@@ -741,6 +922,21 @@ switch:
 
   - platform: restart
     name: "HP Controller Restart"
+
+binary_sensor:
+  - platform: gpio
+    name: "DHW request"
+    id: dhw
+    pin: 
+      number: GPIO15
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+        
+
+
+
 
 
 web_server:
