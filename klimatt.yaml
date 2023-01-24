@@ -134,8 +134,9 @@ display:
         it.printf(127, 69, id(font1), TextAlign::TOP_RIGHT , "Tho:%.1f", id(tho).state);
         it.printf(127, 92, id(font1), TextAlign::TOP_RIGHT , "Outs:%.1f", id(outside_temp).state);
         it.printf(127, 115, id(font1), TextAlign::TOP_RIGHT , "Evap:%.1f", id(tbe).state);
-        it.printf(127, 138, id(font1), TextAlign::TOP_RIGHT , "DHW: ", id(dhw).state);
-        it.printf(127, 161, id(font1), TextAlign::TOP_RIGHT , "HP: ", id(hp_mode).state);
+        it.printf(127, 138, id(font1), TextAlign::TOP_RIGHT , "DHW: %i",  id(dhw).state);
+        it.printf(127, 161, id(font1), TextAlign::TOP_RIGHT , "HP: %s", id(hp_mode).state.c_str());
+        it.printf(127, 184, id(font1), TextAlign::TOP_RIGHT , "BOI: %i", id(boiler).state);
       }
      
 text_sensor:
@@ -179,8 +180,8 @@ climate:
 
       - switch.turn_off: compressor
       - delay: 10 s
-      - switch.turn_off: four_wv
-      - switch.turn_off: circulation
+      #- switch.turn_off: four_wv
+      #- switch.turn_off: circulation
       - switch.turn_off: fan
       - logger.log:
           level: WARN
@@ -318,15 +319,16 @@ climate:
     default_target_temperature_high: 68 °C
 
     heat_action:
-      - text_sensor.template.publish:
-         id: hp_mode
-         state: !lambda 'return "Defrost";'
+
       - logger.log:
           level: WARN
           format: "defrost controller HEAT"
       - climate.control:
           id: HP_Controller
           mode: "OFF"
+      - text_sensor.template.publish:
+         id: hp_mode
+         state: !lambda 'return "Defrost 3";'
       - switch.turn_off: four_wv
       - switch.turn_off: fan
       - switch.turn_on: circulation
@@ -388,7 +390,8 @@ sensor:
     filters:
       lambda: |-
         return (id(tae).state > 50);
-
+  - platform: uptime
+    name: HP Uptime Sensor
 
 
   - platform: dht
@@ -630,6 +633,20 @@ sensor:
         window_size: 5
         send_every: 3
         send_first_at: 2
+        
+        
+  - platform: dallas
+    address: 0xff3c79f649198628
+    name: "AKU in"
+    id: t_aku_in 
+    dallas_id: temps
+
+    filters:
+    - filter_out: nan
+    - median:
+        window_size: 5
+        send_every: 3
+        send_first_at: 2
 #add temperature ranges
 
   - platform: dallas
@@ -738,6 +755,10 @@ switch:
     turn_on_action:
       then:            #10 min
        #- binary_sensor.turn_on: defrost_mode
+       - text_sensor.template.publish:
+           id: hp_mode
+           state: !lambda 'return "Defrosting";'
+
        - switch.turn_on: circulation
        - sensor.template.publish:
            id: defrost_mode
@@ -746,8 +767,8 @@ switch:
        - logger.log:
            level: ERROR
            format: "DEFROST CALLED - 7 min defrost"
-       - switch.turn_on: boiler
-       - delay: 30 s
+       #- switch.turn_on: boiler
+
        - switch.turn_off: four_wv
        - switch.turn_off: fan
        - delay: 30 s                   #2m
@@ -761,7 +782,9 @@ switch:
        - climate.control:
           id: HP_Controller
           mode: "OFF"
-
+       - text_sensor.template.publish:
+           id: hp_mode
+           state: !lambda 'return "Defrost 2";'
        - switch.turn_off: fan
 
        #- switch.turn_on: fan
@@ -794,6 +817,9 @@ switch:
            format: "DEFROST CALLED - flushing air, zapinam po 60s"
        - delay: 5 s         #5,15
        - switch.turn_off: fan
+       - sensor.template.publish:
+           id: defrost_mode
+           state: 5
        - delay: 2 min       #7,15
        - climate.control:
           id: HP_defrost
@@ -804,8 +830,8 @@ switch:
                #2
        - sensor.template.publish:
            id: defrost_mode
-           state: 5
-    #   - switch.turn_off: boiler
+           state: 6
+       #- switch.turn_off: boiler
 
 
        - logger.log:
