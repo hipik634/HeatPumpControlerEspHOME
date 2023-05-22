@@ -75,7 +75,9 @@ esp32:
 
 # Enable Home Assistant API
 api:
-  password: !secret apipass
+  encryption:
+  #password: !secret apipass
+    key: ULJzAAJaJNlU6iM1TTQcrklRM6TV86Bb7CabsM93GCk=
   reboot_timeout: 600s
 
 ota:
@@ -364,7 +366,7 @@ dallas:
   - pin: GPIO27
     update_interval: 1s
     id: temps
-  - pin: GPIO26
+  - pin: GPIO26          #26->38
     update_interval: 1s
     id: temps2
 ##################################Individual sensors
@@ -896,6 +898,7 @@ switch:
 
 
 
+
 #safety stop
 #noninverted -> meant to shutdown all AC inputs if LOW
 
@@ -954,7 +957,7 @@ binary_sensor:
     name: "DHW request"
     id: dhw
     pin: 
-      number: GPIO15
+      number: GPIO15                 #15->38
       inverted: true
       mode:
         input: true
